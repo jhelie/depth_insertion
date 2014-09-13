@@ -12,126 +12,20 @@ import os.path
 #=========================================================================================
 # create parser
 #=========================================================================================
-version_nb = "0.0.22"
-parser = argparse.ArgumentParser(prog = 'cluster_density_profile', usage='', add_help = False, formatter_class = argparse.RawDescriptionHelpFormatter, description =\
+version_nb = "0.0.1"
+parser = argparse.ArgumentParser(prog = 'depth_insertion', usage='', add_help = False, formatter_class = argparse.RawDescriptionHelpFormatter, description =\
 '''
-******************************************************
+**********************************************
 v''' + version_nb + '''
 author: Jean Helie (jean.helie@bioch.ox.ac.uk)
-git: https://github.com/jhelie/cluster_density_profile
+git: https://github.com/jhelie/depth_insertion
 DOI: 
-******************************************************
+**********************************************
 
 [ DESCRIPTION ]
  
-This script plots the density profile along the z axis of groups of particles present
-around transmembrane proteins. Density profiles are broken down by the size of the
-TM clusters.
-
-A file containing the charged particles can also be supplied to calculate the density
-of charges.
- 
-If you want to calculate densities in a membrane which do not contain any proteins (or
-ignore the presence of proteins) just set '--proteins no'.
-
-density calculation
--------------------
-Density is calculated based on a cylinder centered on the protein cluster center of 
-geometry. All the particles present in this cylinder are binned into cylinder slices
-based on their distance (along z) to the center of the lipid bilayer. The cylinder
-radius is controlled via --slices_radius and the slices thickness via --slices_thick.
-
-(a) particles selection
-  You can specify the particles for which to plot the density by supplying a file
-  via the --particles option. Each line of this file should follow the following
-  format (without quotation marks):
-   -> 'group,label,colour,MDAnalysis selection string'
- 
-  where 'group' is used to normalise the densities of several particles. By default
-  each particle type is normalised with respect to itself and the following densities
-  are used:
-   -> peptide,peptide,#262626,protein
-   -> CHOL,CHOL,#bdbdbd,resname CHOL and name ROH
-   -> POPC,POPC,#41ab5d,resname POPC and name PO4
-   -> POPE,POPE,#6a51a3,resname POPE and name PO4
-   -> POPS,POPS,#cc4c02,resname POPS and name PO4
-   -> water,water,#1d91c0,resname W
-   -> Na+,Na+,#7bccc4,name NA+
-   -> Cl-,Cl-,#fa9fb5,name CL-
-  
-  Note that the only acceptable protein selection is the whole "protein" string and
-  that it should be labeled as "peptide" and in a group of its own also labeled
-  "peptide". If you're interested in particular sub-selections of proteins, see (b)
-  below.
-   
-(b) protein details: residue types
-  Density profiles can be broken down further for peptides to show the density
-  distribution amongst different residue types. You can group the residues as you
-  wish by supplying a file via the --residues options. Each line of this file
-  should follow the following format:
-  -> 'label,colour,resname1,resname2,...'
-  
-  By default the following residue types are used:
-   -> basic,#253494,ARG,LYS
-   -> negative,#99d8c9,ASP, GLU
-   -> hydrophobic,#993404,VAL,ILE,LEU,MET,PRO,CYS,PHE,TYR,TRP
-   -> backbone,#969696,ALA,GLY
-
-  WARNING: you need to have defined a particle type called "peptide" in (a) in order
-  to show residue details.
-  If you do not want to show residue details, just use: '--residues no'.
-
-(c) charge density
-  You can specify which particles to take into account for the calculation of the total
-  charge density by supplying a file via the --charges option. Each line of this file
-  should follow the format (without quotation marks):
-   -> 'group_name,colour,charge_name,charge,MDAnalysis selection string for charge'
-
-  The absolute charge for each group will be plotted on the charge density profile. The
-  group colour must be specified for each charge.
-  
-  By default the charged are defined as follows (the peptide charges correspond to that
-  of uncapped transportan):
-   -> ions,#52A3CC,Na+,1,resname NA+
-   -> ions,#52A3CC,CL-,-1,resname CL-
-   -> lipids,#b2182b,-1,phosphate,name PO4
-   -> lipids,#b2182b,1,amine_choline,name NH3 or name NC3
-   -> peptide,#053061,pos,1,(resnum 1 and resname GLY and name BB) or (resname LYS and name SC2)
-   -> peptide,#053061,neg,-1, resnum 27 and resname LEU and name BB
-  (note that the MDAnalysis selection string should not contain any commas)
-
-  If you do not want to calculate charge density, just use: '--charges no'
-
-(d) colour definition
-  Colours can be specified using single letter code (rgbcmykw), hex code  or the name of
-  a colour map (see the matplotlib website for a list of the available colour maps).
-  In case a colour map is used, its name must be specified as the only colour.
-
-detection of transmembrane protein clusters
--------------------------------------------
-Two clustering algorithms can be used to identify protein clusters.
-
-(a) Connectivity based (relies on networkX module):
-  A protein is considered in a cluster if it is within a distance less than --nx_cutoff
-  from another protein. This means that a single protein can act as a connector between
-  two otherwise disconnected protein clusters.
-  This algorithm can be ran using either the minimum distante between proteins (default, 
-  --algorithm 'min') or the distance between their center of geometry (--algorithm 'cog').
-  The 'min' option scales as the square of the number of proteins and can thus be very
-  slow for large systems.
-
-(b) Density based (relies on the sklearn module and its implementation of DBSCAN):
-  A protein is considered in a cluster if is surrounded by at least --db_neighbours other
-  proteins within a radius of --db_radius.
-  This density based approach is usually less suited to the detection of protein
-  clusters but as a general rule the more compact the clusters, the smaller --db_radius
-  the higher --db_neighbours can be - for details on this algorithm see its online
-  documentation.
-  This algorithm is selected by setting the --algorithm option to 'density'.
-
-The identified protein clusters are considered to be transmembrane only if the closest
-lipid headgroup neighbours to the cluster particles are all within the same leaflet.
-In addition to the sizes identified, size groups can be defined - see note 7.
+This script calculate the average distance between each particle of a peptide
+and the selected leaflet.
 
 
 [ REQUIREMENTS ]
@@ -141,78 +35,14 @@ The following python modules are needed :
  - matplotlib
  - np
  - sp
- - networkX (if option --algorithm is set to 'min' or 'cog')
- - sklearn (if option --algorithm is set to 'density')
+ - networkX
 
 
 [ NOTES ]
 
-1. The density is calculated with respect to the z axis, not the bilayer normal. So the
-   more your system deforms the noiser the less meaningful the results get.
+1. The distance is calculated with respect to the z axis, not the bilayer normal. So the
+   more your system deforms the noiser and the less meaningful the results get.
 
-2. Identification of the bilayer leaflets can be controlled via 3 options:
-   (a) beads
-    By default, the particles taken into account to define leaflet are:e
-    -> name PO4 or name PO3 or name B1A
-   
-    Note that only lipids which contain one of the beads mentioned in the selection string
-    will be taken into account. If you wish to specify your own selection string (e.g. to
-    choose different beads or add a bead not in the default list in order to take into
-    account a particular lipid specie) you can do so by supplying a file via the --beads
-    option. This file should contain a single line that can be passed as the argument
-    to MDAnalysis selectAtoms() routine and should not contain any quotation marks, e.g.:
-     -> name PO4 or name PO3 or name B1A or name AM1
-        
-   (b) leaflet finding method
-    By default leaflets are identified using the MDAnalysis LeafletFinder routine and the
-    the optimum cutoff to identify 2 lipids groups is determined using the optimize_cutoff
-    routine.
-    This optimisation process can take time in large systems and you can specify your own
-    cutoff value to skip this step. For instance to use a 15 Angstrom cutoff value:
-     -> '--leaflet 15'
-   
-    In very large systems (more then ~50,000 phospholipids) LeafletFinder (or rather the
-    networkX module that it relies on) can fail. To  avoid this you can choose not to use
-    this routine by specifying:
-     -> '--leaflet large'
-    In this case lipids whose headgroups z value is above the average lipids z value will
-    be considered to make up the upper leaflet and those whose headgroups z value is below
-    the average will be considered to be in the lower leaflet.
-    This means that the bilayer should be as flat as possible in the gro file supplied in
-    order to get a meaningful outcome.
-
-   (c) flipflopping lipids
-    In case lipids flipflop during the trajectory, a file listing them can be supplied
-    with the --flipflops option. Each line of this file should follow the format:
-     -> 'resname,resid,starting_leaflet,z_bead'
-    where starting_leaflet is either 'upper' or 'lower' - e.g. 'POPC,145,lower,PO4'. The
-    z_bead is used to track the position of the lipid.
-    If flipflopping lipids are not specified they may add significant noise to results as
-    they prevent the correct identification of TM clusters.
-    Note that, even when specified, flipflopping lipids will be taken into account when
-    calculating densities and charges.   
-
-3. Proteins are detected automatically but you can specify an input file to define your
-   own selection with the --proteins option.
-   In this case the supplied file should contain on each line a protein selection string
-   that can be passed as the argument of the MDAnalysis selectAtoms() routine - for 
-   instance 'bynum 1:344'.
-   
-   If you do not have proteins in your bilayer or do not want to take them into account,
-   just use '--proteins no'.
-
-4. The densities are calculated for each TM cluster size identified but can also be
-   binned into size groups.
-   The size groups are defined by supplying a file with --groups, whose lines all
-   follow the format:
-    -> 'lower_size,upper_size'
-
-   Size groups definition should follow the following rules:
-    -to specify an open ended group use 'max', e.g. '3,max'
-    -groups should be ordered by increasing size and their boundaries should not overlap
-    -boundaries are inclusive so you can specify one size groups with 'size,size,colour'
-    -any cluster size not covered will be labeled as 'other'
- 
  
 [ USAGE ]
 
@@ -223,30 +53,8 @@ Option	      Default  	Description
 -o			: name of output folder
 -b			: beginning time (ns) (the bilayer must exist by then!)
 -e			: ending time (ns)	
--t 		10	: process every t-frames
- 
-Density profile options
------------------------------------------------------
---range		40 	: distance spanned on either side of the bilayer center
---types			: definition of residue groups, see 'DESCRIPTION'
---charges		: definition of charged particles, see 'DESCRIPTION' 
---slices_thick	0.5 	: z thickness of the slices (Angstrom)
---slices_radius	30 	: radius of the slices (Angstrom)
-
-Lipids identification  
------------------------------------------------------
---beads			: leaflet identification technique, see note 2(a)
---flipflops		: input file with flipflopping lipids, see note 2(c)
---leaflets	optimise: leaflet identification technique, see note 2(b)
-
-Protein clusters identification
------------------------------------------------------
---groups		: cluster groups definition file, see note 4
---proteins		: protein selection file, (optional, see note 3)
---algorithm	min	: 'cog','min' or 'density', see 'DESCRIPTION'
---nx_cutoff 	8	: networkX cutoff distance for protein-protein contact (Angstrom)
---db_radius 	20	: DBSCAN search radius (Angstrom)
---db_neighbours	3	: DBSCAN minimum number of neighbours within a circle of radius --db_radius	
+-t 		1	: process every t-frames
+--leaflet		: reference leaflet ('upper' or 'lower')
 
 Other options
 -----------------------------------------------------
