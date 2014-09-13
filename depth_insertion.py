@@ -70,7 +70,6 @@ parser.add_argument('-o', nargs=1, dest='output_folder', default=['no'], help=ar
 parser.add_argument('-b', nargs=1, dest='t_start', default=[-1], type=int, help=argparse.SUPPRESS)
 parser.add_argument('-e', nargs=1, dest='t_end', default=[-1], type=int, help=argparse.SUPPRESS)
 parser.add_argument('-t', nargs=1, dest='frames_dt', default=[1], type=int, help=argparse.SUPPRESS)
-parser.add_argument('--leaflet', dest='leaflet', choices=['lower','upper'], help=argparse.SUPPRESS, required=True)
 
 #other options
 parser.add_argument('--version', action='version', version='%(prog)s v' + version_nb, help=argparse.SUPPRESS)
@@ -336,10 +335,29 @@ def identify_proteins():												#DONE
 	print ""
 
 	#create selection for each particle
-	global sele_part
-	sele_part = {}
+	global part_sele
+	part_sele = {}
+	part_type = []
 	for p in range(0,nb_atom_per_protein):
-		sele_part[p] = U.selectAtoms("bynum " + str(p+1))
+		part_sele[p] = U.selectAtoms("bynum " + str(p+1))
+		part_type.append(part_sele[p].resnames()[0])
+	
+	#create position index of each residue type
+	global type_pos
+	global res_colour
+	type_pos = {}
+	res_list = {}
+	res_list["basic"] = ['ARG','LYS']
+	res_list["polar"] = ['SER','THR','ASN','GLN','HIS']		
+	res_list["hydrophobic"] = ['VAL','ILE','LEU','MET','PHE','PRO','CYS','TYR','TRP']
+	res_list["backbone"] = ['ALA','GLY']	
+	res_colour = {}
+	res_colour["basic"] = '#253494'						#blue
+	res_colour["polar"] = '#a1d99b'						#greenish
+	res_colour["hydrophobic"] = '#993404'				#orange brown
+	res_colour["backbone"] = '#969696'					#light grey
+	for t in ["basic","polar","hydrophobic","backbone"]:
+		type_pos[t] = np.asarray({p: part_type[p] in res_list[t] for p in range(0,nb_atom_per_protein)}.values())
 
 	return
 def identify_leaflets():												#DONE
@@ -348,6 +366,8 @@ def identify_leaflets():												#DONE
 	#declare variables
 	global leaflet_sele
 	global leaflet_sele_atoms
+	global leaflet_peptide
+	
 	leaflet_sele = {}
 	leaflet_sele_atoms = {}
 	for l in ["lower","upper","both"]:
@@ -359,7 +379,6 @@ def identify_leaflets():												#DONE
 	ts = U.trajectory[frames_to_process[0]]
 	cutoff_value = MDAnalysis.analysis.leaflet.optimize_cutoff(U, leaflet_sele_string)
 	L = MDAnalysis.analysis.leaflet.LeafletFinder(U, leaflet_sele_string, cutoff_value[0])
-	
 	if np.shape(L.groups())[0]<2:
 		print "Error: imposssible to identify 2 leaflets."
 		sys.exit(1)
@@ -378,8 +397,13 @@ def identify_leaflets():												#DONE
 			other_lipids += L.group(g).numberOfResidues()
 		print " -found " + str(np.shape(L.groups())[0]) + " groups: " + str(leaflet_sele["upper"].numberOfResidues()) + "(upper), " + str(leaflet_sele["lower"].numberOfResidues()) + "(lower) and " + str(other_lipids) + " (others) lipids respectively"
 			
+	#identify leaflet in which the peptide is
+	if abs(proteins_sele[0].centerOfGeometry()[2] - leaflet_sele["upper"].centerOfGeometry()[2]) < abs(proteins_sele[0].centerOfGeometry()[2] - leaflet_sele["lower"].centerOfGeometry()[2]):
+		leaflet_peptide = "upper"
+	else:
+		leaflet_peptide = "lower"
+	
 	return
-
 
 #=========================================================================================
 # data structures
@@ -400,14 +424,14 @@ def struct_particles():
 def calculate_depth():													#DONE
 	
 	global z_part
-	z_ref = leaflet_sele[args.leaflet].centerOfGeometry()[2]
-	if args.leaflet == "upper":
+	z_ref = leaflet_sele[leaflet_peptide].centerOfGeometry()[2]
+	if leaflet_peptide == "upper":
 		for p in range(0,nb_atom_per_protein):
-			tmp = sele_part[p].centerOfGeometry()[2]-z_ref
+			tmp = part_sele[p].centerOfGeometry()[2]-z_ref
 			z_part[p] += tmp
 	else:
 		for p in range(0,nb_atom_per_protein):
-			tmp = z_ref - sele_part[p].centerOfGeometry()[2]
+			tmp = z_ref - part_sele[p].centerOfGeometry()[2]
 			z_part[p] += tmp
 		
 	return
@@ -425,13 +449,46 @@ def calculate_stats():													#DONE
 def depth_graph():
 			
 	#filenames
+	filename_png = os.getcwd() + '/' + str(args.output_folder) + '/depth_insertion.png'
+	filename_svg = os.getcwd() + '/' + str(args.output_folder) + '/depth_insertion.svg'
+
+	#create figure
+	fig = plt.figure(figsize=(8, 6.2))
+
+	#plot data
+	ax = fig.add_subplot(111)
+	ax.spines['top'].set_visible(False)
+	ax.spines['right'].set_visible(False)
+	ax.xaxis.set_ticks_position('bottom')
+	ax.yaxis.set_ticks_position('left')
+	ax.set_xlim(0, nb_atom_per_protein)
+	for t in ["basic","polar","hydrophobic","backbone"]:
+		tmp_z = np.zeros(nb_atom_per_protein)
+		tmp_z[type_pos[t]] = z_part[type_pos[t]]
+		plt.bar(np.arange(0,nb_atom_per_protein), tmp_z, color = res_colour[t], label = t)
+	fontP.set_size("small")
+	ax.legend(prop=fontP)
+	plt.hlines(0, 0, nb_atom_per_protein,)
+	plt.xlabel('sequence')
+	plt.ylabel('z distance to leaflet')
+	
+	#save figure
+	fig.savefig(filename_png)
+	fig.savefig(filename_svg)
+	plt.close()
+				
+	return
+
+def depth_write():
+			
+	#filenames
 	filename_xvg = os.getcwd() + '/' + str(args.output_folder) + '/depth_insertion.xvg'
 	output_xvg = open(filename_xvg, 'w')
 	
 	#general header
 	output_xvg.write("# [particles interfacial depth of insertion - written by depth_insertion v" + str(version_nb) + "]\n")
 	output_xvg.write("# side of bilayer:\n")
-	output_xvg.write("#  -> leaflet = " + str(args.leaflet) + "\n")
+	output_xvg.write("#  -> leaflet = " + str(leaflet_peptide) + "\n")
 	output_xvg.write("# nb of frames which contributed to this profile:\n")
 	output_xvg.write("# -> weight = " + str(nb_frames_to_process) + "\n")
 	
@@ -455,27 +512,6 @@ def depth_graph():
 		output_xvg.write(results + "\n")	
 	output_xvg.close()
 
-def depth_write():
-			
-	#filenames
-	filename_png = os.getcwd() + '/' + str(args.output_folder) + '/depth_insertion.png'
-	filename_svg = os.getcwd() + '/' + str(args.output_folder) + '/depth_insertion.svg'
-
-	#create figure
-	fig = plt.figure(figsize=(8, 6.2))
-
-	#plot data
-	ax = fig.add_subplot(111)
-	plt.bar(np.arange(0,nb_atom_per_protein), z_part)
-	plt.hlines(0, 0, nb_atom_per_protein,)
-	plt.xlabel('z distance to leaflet')
-	plt.ylabel('sequence')
-	
-	#save figure
-	fig.savefig(filename_png)
-	fig.savefig(filename_svg)
-	plt.close()
-				
 	return
 
 ##########################################################################################
@@ -526,6 +562,7 @@ calculate_stats()
 
 print "\nWriting outputs..."
 depth_graph()
+depth_write()
 
 #=========================================================================================
 # exit
