@@ -208,10 +208,12 @@ def load_MDA_universe():												#DONE
 	global nb_frames_xtc
 	global frames_to_process
 	global nb_frames_to_process
+	global nb_frames_processed
 	global f_start
 	global f_end
 	global residues_list
 	f_start = 0
+	nb_frames_processed = 0
 		
 	#load universe
 	#-------------
@@ -370,6 +372,7 @@ def identify_leaflets():												#DONE
 	
 	leaflet_sele = {}
 	leaflet_sele_atoms = {}
+	leaflet_peptide = "tbd"
 	for l in ["lower","upper","both"]:
 		leaflet_sele[l] = {}
 		leaflet_sele_atoms[l] = {}
@@ -396,13 +399,7 @@ def identify_leaflets():												#DONE
 		for g in range(2, np.shape(L.groups())[0]):
 			other_lipids += L.group(g).numberOfResidues()
 		print " -found " + str(np.shape(L.groups())[0]) + " groups: " + str(leaflet_sele["upper"].numberOfResidues()) + "(upper), " + str(leaflet_sele["lower"].numberOfResidues()) + "(lower) and " + str(other_lipids) + " (others) lipids respectively"
-			
-	#identify leaflet in which the peptide is
-	if abs(proteins_sele[0].centerOfGeometry()[2] - leaflet_sele["upper"].centerOfGeometry()[2]) < abs(proteins_sele[0].centerOfGeometry()[2] - leaflet_sele["lower"].centerOfGeometry()[2]):
-		leaflet_peptide = "upper"
-	else:
-		leaflet_peptide = "lower"
-	
+				
 	return
 
 #=========================================================================================
@@ -424,12 +421,28 @@ def struct_particles():
 def calculate_depth():													#DONE
 	
 	global z_part
-	z_ref = leaflet_sele[leaflet_peptide].centerOfGeometry()[2]
-	if leaflet_peptide == "upper":
+	global leaflet_peptide
+	global nb_frames_processed
+	
+	if leaflet_peptide == "tbd":	
+		#check whether peptide has reached interfacial state and if so on which leaflet
+		dist_min_lower = np.min(MDAnalysis.analysis.distances.distance_array(proteins_sele[0].coordinates(), leaflet_sele["lower"].coordinates(), U.trajectory.ts.dimensions), axis = 1)
+		dist_min_upper = np.min(MDAnalysis.analysis.distances.distance_array(proteins_sele[0].coordinates(), leaflet_sele["upper"].coordinates(), U.trajectory.ts.dimensions), axis = 1)
+		dist = dist_min_upper - dist_min_lower
+		if np.size(dist[dist>0]) == np.size(dist):
+			leaflet_peptide = "lower"
+		elif np.size(dist[dist>0]) == 0:
+			leaflet_peptide = "upper"
+			
+	elif leaflet_peptide == "upper":
+		nb_frames_processed += 1
+		z_ref = leaflet_sele["upper"].centerOfGeometry()[2]
 		for p in range(0,nb_atom_per_protein):
 			tmp = part_sele[p].centerOfGeometry()[2]-z_ref
 			z_part[p] += tmp
 	else:
+		nb_frames_processed += 1
+		z_ref = leaflet_sele["lower"].centerOfGeometry()[2]
 		for p in range(0,nb_atom_per_protein):
 			tmp = z_ref - part_sele[p].centerOfGeometry()[2]
 			z_part[p] += tmp
@@ -438,7 +451,7 @@ def calculate_depth():													#DONE
 def calculate_stats():													#DONE
 	
 	for p in range(0,nb_atom_per_protein):	
-		z_part[p] /= float(nb_frames_to_process)
+		z_part[p] /= float(nb_frames_processed)
 	
 	return
 
@@ -478,7 +491,6 @@ def depth_graph():
 	plt.close()
 				
 	return
-
 def depth_write():
 			
 	#filenames
@@ -490,7 +502,7 @@ def depth_write():
 	output_xvg.write("# side of bilayer:\n")
 	output_xvg.write("#  -> leaflet = " + str(leaflet_peptide) + "\n")
 	output_xvg.write("# nb of frames which contributed to this profile:\n")
-	output_xvg.write("# -> weight = " + str(nb_frames_to_process) + "\n")
+	output_xvg.write("# -> weight = " + str(nb_frames_processed) + "\n")
 	
 	#xvg metadata
 	output_xvg.write("@ title \"Particles depth of insertion\"\n")
@@ -533,7 +545,7 @@ struct_particles()
 #=========================================================================================
 # generate data
 #=========================================================================================
-print "\nCalculating density profiles..."
+print "\nCalculating depth of insertion..."
 
 #case: structure only
 #--------------------
