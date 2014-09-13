@@ -54,7 +54,8 @@ Option	      Default  	Description
 -b			: beginning time (ns) (the bilayer must exist by then!)
 -e			: ending time (ns)	
 -t 		1	: process every t-frames
---leaflet		: reference leaflet ('upper' or 'lower')
+--penetratin		: to select penetratin
+--transportan		: to select transportan
 
 Other options
 -----------------------------------------------------
@@ -70,6 +71,8 @@ parser.add_argument('-o', nargs=1, dest='output_folder', default=['no'], help=ar
 parser.add_argument('-b', nargs=1, dest='t_start', default=[-1], type=int, help=argparse.SUPPRESS)
 parser.add_argument('-e', nargs=1, dest='t_end', default=[-1], type=int, help=argparse.SUPPRESS)
 parser.add_argument('-t', nargs=1, dest='frames_dt', default=[1], type=int, help=argparse.SUPPRESS)
+parser.add_argument('--penetratin', dest='penetratin', action='store_true', help=argparse.SUPPRESS)
+parser.add_argument('--transportan', dest='transportan', action='store_true', help=argparse.SUPPRESS)
 
 #other options
 parser.add_argument('--version', action='version', version='%(prog)s v' + version_nb, help=argparse.SUPPRESS)
@@ -163,6 +166,13 @@ if args.xtcfilename == "no":
 		sys.exit(1)
 elif not os.path.isfile(args.xtcfilename):
 	print "Error: file " + str(args.xtcfilename) + " not found."
+	sys.exit(1)
+
+if args.penetratin and args.transportan:
+	print "Error: you can't specify both --penetratin and --transportan."
+	sys.exit(1)
+if not args.penetratin and not args.transportan:
+	print "Error: you need to specify either --penetratin or --transportan."
 	sys.exit(1)
 
 #=========================================================================================
@@ -361,6 +371,19 @@ def identify_proteins():												#DONE
 	for t in ["basic","polar","hydrophobic","backbone"]:
 		type_pos[t] = np.asarray({p: part_type[p] in res_list[t] for p in range(0,nb_atom_per_protein)}.values())
 
+	#create beads selection
+	global b1
+	global b2	
+	global b3
+	if args.transportan:
+		b1 = proteins_sele[0].selectAtoms("bynum 1")
+		b2 = proteins_sele[0].selectAtoms("bynum 31")
+		b3 = proteins_sele[0].selectAtoms("bynum 49")
+	if args.penetratin:
+		b1 = proteins_sele[0].selectAtoms("bynum 1")
+		b2 = proteins_sele[0].selectAtoms("bynum 45")
+
+
 	return
 def identify_leaflets():												#DONE
 	print "\nIdentifying leaflets..."
@@ -425,14 +448,31 @@ def calculate_depth():													#DONE
 	global nb_frames_processed
 	
 	if leaflet_peptide == "tbd":	
-		#check whether peptide has reached interfacial state and if so on which leaflet
-		dist_min_lower = np.min(MDAnalysis.analysis.distances.distance_array(proteins_sele[0].coordinates(), leaflet_sele["lower"].coordinates(), U.trajectory.ts.dimensions), axis = 1)
-		dist_min_upper = np.min(MDAnalysis.analysis.distances.distance_array(proteins_sele[0].coordinates(), leaflet_sele["upper"].coordinates(), U.trajectory.ts.dimensions), axis = 1)
-		dist = dist_min_upper - dist_min_lower
-		if np.size(dist[dist>0]) == np.size(dist):
-			leaflet_peptide = "lower"
-		elif np.size(dist[dist>0]) == 0:
-			leaflet_peptide = "upper"
+		#find middle membrane plane
+		tmp_zu = leaflet_sele["upper"].centerOfGeometry()[2]
+		tmp_zl = leaflet_sele["lower"].centerOfGeometry()[2]
+		z_median = tmp_zl + (tmp_zu - tmp_zl)/float(2)
+	
+		#case: penetratin
+		if args.penetratin:
+			b1_pos = b1.centroid()[2] - z_median
+			b2_pos = b2.centroid()[2] - z_median
+			if np.sign(b1_pos) == np.sign(b2_pos):
+				if np.sign(b1_pos) > 0:
+					leaflet_peptide = "upper"
+				else:
+					leaflet_peptide = "lower"
+		
+		#case: transportan
+		else:
+			b1_pos = b1.centroid()[2] - z_median
+			b2_pos = b2.centroid()[2] - z_median
+			b3_pos = b3.centroid()[2] - z_median
+			if np.sign(b1_pos) == np.sign(b2_pos) and np.sign(b1_pos) == np.sign(b3_pos):
+				if np.sign(b1_pos) > 0:
+					leaflet_peptide = "upper"
+				else:
+					leaflet_peptide = "lower"
 			
 	elif leaflet_peptide == "upper":
 		nb_frames_processed += 1
